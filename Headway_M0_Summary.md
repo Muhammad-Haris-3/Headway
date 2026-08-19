@@ -56,12 +56,12 @@ Code: `ingest/m0_precision.py`, `analysis/m0_bracket.py`.
 
 | | |
 |---|---|
-| Window | 24.3 minutes |
+| Window | 30.0 minutes |
 | Routes | Red, Orange, Blue (rapid transit) |
-| Vehicle observations | **17,952** across 352 polls |
+| Vehicle observations | **22,083** across 433 polls |
 | Actual cadence | **4.2s** (designed 4.0s) |
-| Status mix | 7,889 `STOPPED_AT`, 6,301 `INCOMING_AT`, 3,762 `IN_TRANSIT_TO` |
-| Bracketable arrivals | **491** |
+| Status mix | 9,807 `STOPPED_AT`, 7,725 `INCOMING_AT`, 4,551 `IN_TRANSIT_TO` |
+| Bracketable arrivals | **595** |
 | API key | None. 20 requests/min, confirmed from `x-ratelimit-limit` |
 
 ### 3.2 The bracket, on two clocks
@@ -71,13 +71,12 @@ yet stopped and the first showing it stopped. The true arrival lies inside.
 
 | Clock | Median | Mean | p25 | p75 | p90 | p99 | Max | ≤10s | ≤60s |
 |---|---|---|---|---|---|---|---|---|---|
-| **Feed (`updated_at`)** | **20.0s** | 24.0s | 12s | 32s | 44s | 88s | 148s | 19% | 97% |
-| **Ours (poll time)** | **4.0s** | 4.3s | 4s | 4s | 5s | 18s | 18s | 99% | 100% |
+| **Feed (`updated_at`)** | **20.0s** | 24.3s | 12s | 32s | 44s | 145s | 148s | 18% | 97% |
+| **Ours (poll time)** | **4.0s** | 4.3s | 4s | 4s | 5s | 7s | 18s | 99% | 100% |
 
-**Stable.** The feed median read 19.0s at both 17.4 minutes (349 arrivals) and
-19.8 minutes (397), and 20.0s over the full 24.3 minutes (491). It moves by a
-second as the sample grows and stays firmly inside the same band. It is not a
-sampling fluctuation.
+**Converged.** The feed median read 19.0s at 349 and 397 arrivals, then 20.0s at
+491 and again at the full 595. It moved by one second as the sample grew by 70%
+and then stopped moving. It is not a sampling fluctuation.
 
 ### 3.3 What the gap between the two clocks means
 
@@ -248,5 +247,6 @@ Then M0-T3, T5, T6 and T8, which remain undone.
 
 | Version | Date | Change |
 |---|---|---|
-| 1.1 | 2026-08-20 | Figures updated to the full 24.3-minute window (W 19.0s -> 20.0s, n 397 -> 491). Same band, same verdict. |
+| 1.2 | 2026-08-20 | Figures finalised on the complete 30-minute run (n 491 -> 595). W stays 20.0s. Same band, same verdict. |
+| 1.1 | 2026-08-20 | Figures updated mid-run (W 19.0s -> 20.0s, n 397 -> 491). |
 | 1.0 | 2026-08-20 | M0-T4 complete. Kill criterion evaluated: middle band. Remaining tasks not started. |
