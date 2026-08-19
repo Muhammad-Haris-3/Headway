@@ -37,8 +37,8 @@ the criterion had three bands rather than a pass/fail.
 | M0-T2 Streaming ingestion | **Superseded** — streaming is unavailable; see §4.1 |
 | M0-T3 Schema and append-only grant | **Done.** Grant tested by attempted violation; see §3.4 |
 | **M0-T4 Arrival-time precision** | **Done.** The task the milestone exists for |
-| M0-T5 Match rate and misses | Not started |
-| M0-T6 Storage | Not started |
+| M0-T5 Match rate and misses | **Done** — 82.6% in-window; see §3.5 |
+| M0-T6 Storage | **Done** — does **not** fit raw; see §3.6 |
 | M0-T7 Pre-registration | **Done**, but written after the pilot — see §5.1 and `PREREGISTRATION.md` §0 |
 | M0-T8 Walking skeleton | Not started |
 | M0-T9 Decision | This document |
@@ -124,6 +124,63 @@ the load-bearing conclusion of M0:
 - **Polling harder** is already past the point of returning anything.
 
 No engineering effort available to this project improves the number.
+
+### 3.5 Match rate under 4-second polling, and the midpoint estimator
+
+21.9 minutes of store-on-change ingestion through the `headway_ingest` role:
+9,139 predictions and 2,313 vehicle events stored, 423 arrivals bracketed,
+4,750 matched predictions.
+
+| | |
+|---|---|
+| Match rate, in-window | **82.6%** (390 of 472) |
+| Baseline at 30s polling, same restriction | 86.7% |
+
+Slightly **worse** than the slower polling, not better. Store-on-change discards
+observations that were byte-identical to the previous one, and a few of those
+were the ones needed to close a bracket. Four points is an acceptable price for
+the storage it saves, but it is a price, and it is recorded as one rather than
+presented as a free optimisation.
+
+**The midpoint estimator confirms §4.2 emphatically.** Same data, two estimators:
+
+| Horizon | First `STOPPED_AT` (biased) | Midpoint (pre-registered) |
+|---|---|---|
+| 5–10 min | +28s | **+6s** |
+| 10–20 min | +42s | **+13s** |
+
+The systematic lateness shrinks by roughly three quarters. What survives is real
+but small; what was published in the feasibility run was mostly the observer.
+This is the M0-T4 prediction, measured rather than argued.
+
+### 3.6 Storage: it does not fit, and the reason is not the table I expected
+
+| Table | Size |
+|---|---|
+| `predictions_register` | 1,320 KB |
+| `matches` | 1,104 KB |
+| `vehicle_events` | 440 KB |
+| `arrivals` | 184 KB |
+| **Measured growth** | **197 MB/day** |
+
+**0.5 GB is exhausted in 2.6 days.** A year of raw would need 70 GB.
+
+Two expectations were wrong:
+
+**Store-on-change barely helps predictions.** Vehicles compressed 6.9×, but
+predictions only **1.8×** — because a prediction genuinely changes on almost
+every poll. The estimated arrival ticks down as the train approaches, so
+"unchanged" is rare. The compression that made vehicles cheap does not transfer.
+
+**`vehicle_events` is not the problem.** It is **14%** of bytes. The retention
+policy has to target `predictions_register` and `matches`, which is the opposite
+of what DC-5 assumed.
+
+**What actually fits:** the raw register is prunable once graded, and `matches`
+is prunable once aggregated. Daily aggregates by horizon, route and hour are a
+few hundred rows a day and can be kept forever. The durable record is the
+scorecard, not the stream that produced it — which is the GridCast retention
+pattern arrived at from the opposite direction.
 
 ---
 
