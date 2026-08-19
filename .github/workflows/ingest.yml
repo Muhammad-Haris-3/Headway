@@ -1,0 +1,36 @@
+name: ingest
+
+# Every five minutes, ingest for four and a half, then exit.
+#
+# Five minutes is GitHub's documented minimum for scheduled workflows, and
+# scheduled runs are delayed under load — so coverage will land somewhere
+# around 85-95%, not 100%. Each run records its own window in `coverage`, so
+# the gaps are visible rather than silently read as punctual service (NFR-5).
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# Never let two ingesters write at once: both would miss the other's
+# store-on-change memory and write duplicate rows.
+concurrency:
+  group: headway-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt
+      - name: ingest
+        env:
+          # The append-only role. It cannot UPDATE or DELETE, by grant (M0-T3).
+          # The owner credential is deliberately not available to this job.
+          INGEST_DATABASE_URL: ${{ secrets.INGEST_DATABASE_URL }}
+          RUN_NOTE: "actions/${{ github.run_id }}"
+        run: python ingest/collect.py --minutes 4.5

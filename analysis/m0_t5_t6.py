@@ -13,7 +13,17 @@ from pathlib import Path
 
 import psycopg
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+def _utf8_stdout():
+    """Windows consoles default to cp1252 and choke on non-ASCII output.
+    Applied only when run as a script: rebinding stdout at import time breaks
+    pytest's capture, which is how this was first noticed."""
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+
+_utf8_stdout()
 ROOT = Path(__file__).resolve().parent.parent
 LIMIT_BYTES = 0.5 * 1024**3
 

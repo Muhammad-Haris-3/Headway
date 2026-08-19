@@ -1,0 +1,45 @@
+name: retain
+
+# Daily: aggregate, seal, prune — in that order, enforced by ingest/retain.py.
+# Runs as the OWNER, which is why it is a separate workflow from ingest: the
+# process writing history must not hold the credential that can delete it.
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be pruned without deleting"
+        type: boolean
+        default: false
+
+concurrency:
+  group: headway-retain
+
+jobs:
+  retain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write        # to commit the seals back
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt
+      - name: aggregate, seal, prune
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python ingest/retain.py ${{ inputs.dry_run && '--dry-run' || '' }}
+      - name: commit seals
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "headway-retain"
+          git config user.email "noreply@github.com"
+          git add seals/ || true
+          # A seal is only evidence if it lives somewhere the database owner
+          # cannot quietly change. That is the point of committing it here.
+          git diff --staged --quiet || git commit -m "Seal rows before pruning ($(date -u +%Y-%m-%d))"
+          git push

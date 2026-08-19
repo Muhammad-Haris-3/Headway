@@ -18,13 +18,20 @@ recorded for that key. Two consequences, both good:
 Connects as `headway_ingest`, which holds INSERT and SELECT and cannot UPDATE
 or DELETE (M0-T3). Nothing here can rewrite history, by grant.
 """
-import argparse, io, json, sys, time, urllib.request, urllib.parse
+import argparse, io, json, os, sys, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+def _utf8_stdout():
+    """Windows consoles default to cp1252 and choke on non-ASCII output.
+    Applied only when run as a script: rebinding stdout at import time breaks
+    pytest's capture, which is how this was first noticed."""
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 ROOT = Path(__file__).resolve().parent.parent
 ROUTES = "Red,Orange,Blue"
 BASE = "https://api-v3.mbta.com"
@@ -33,13 +40,19 @@ PREDICT_EVERY = 30.0
 
 
 def env(key: str) -> str:
-    for line in (ROOT / ".env").read_text(encoding="utf-8-sig").splitlines():
-        t = line.strip()
-        if t and not t.startswith("#") and "=" in t:
-            k, v = t.split("=", 1)
-            if k.strip() == key:
-                return v.strip().strip('"').strip("'")
-    sys.exit(f"{key} missing from .env")
+    """Prefer the process environment (GitHub secrets), fall back to .env (local)."""
+    v = os.environ.get(key)
+    if v:
+        return v
+    p = ROOT / ".env"
+    if p.exists():
+        for line in p.read_text(encoding="utf-8-sig").splitlines():
+            t = line.strip()
+            if t and not t.startswith("#") and "=" in t:
+                k, val = t.split("=", 1)
+                if k.strip() == key:
+                    return val.strip().strip('"').strip("'")
+    sys.exit(f"{key} not set (no environment variable, not in .env)")
 
 
 def get(path: str, params: dict):
@@ -141,7 +154,7 @@ def main(minutes: float):
             "INSERT INTO coverage (window_start, window_end, polls, expected, errors, note)"
             " VALUES (%s,%s,%s,%s,%s,%s)",
             (started, datetime.now(timezone.utc), polls,
-             int(minutes * 60 / VEHICLE_EVERY), errors, "M0-T5/T6 measurement run"))
+             int(minutes * 60 / VEHICLE_EVERY), errors, os.environ.get("RUN_NOTE", "local run")))
     conn.close()
 
     for k in ("veh", "pred"):
@@ -151,6 +164,7 @@ def main(minutes: float):
 
 
 if __name__ == "__main__":
+    _utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--minutes", type=float, default=20.0)
     main(**vars(ap.parse_args()))

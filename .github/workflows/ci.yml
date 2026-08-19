@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements.txt pytest
+      - name: tests
+        env:
+          # Present on pushes to the repo, absent on forked PRs. The grant test
+          # skips rather than fails when it cannot reach a database — a skipped
+          # test that says so is honest; one that passes vacuously is not.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          INGEST_DATABASE_URL: ${{ secrets.INGEST_DATABASE_URL }}
+        run: pytest tests/ -v

@@ -17,13 +17,20 @@ Policy, from the M0-T6 measurement of 197 MB/day against a 0.5 GB tier:
 
 Usage:  python ingest/retain.py [--dry-run]
 """
-import argparse, hashlib, io, json, sys
+import argparse, hashlib, io, json, os, sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+def _utf8_stdout():
+    """Windows consoles default to cp1252 and choke on non-ASCII output.
+    Applied only when run as a script: rebinding stdout at import time breaks
+    pytest's capture, which is how this was first noticed."""
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 ROOT = Path(__file__).resolve().parent.parent
 SEAL_DIR = ROOT / "seals"
 FULL_DAYS = 2
@@ -33,13 +40,19 @@ BUCKETS = [(300, 600, "5-10"), (600, 1200, "10-20"), (1200, 1800, "20-30")]
 
 
 def env(key: str) -> str:
-    for line in (ROOT / ".env").read_text(encoding="utf-8-sig").splitlines():
-        t = line.strip()
-        if t and not t.startswith("#") and "=" in t:
-            k, v = t.split("=", 1)
-            if k.strip() == key:
-                return v.strip().strip('"').strip("'")
-    sys.exit(f"{key} missing from .env")
+    """Prefer the process environment (GitHub secrets), fall back to .env (local)."""
+    v = os.environ.get(key)
+    if v:
+        return v
+    p = ROOT / ".env"
+    if p.exists():
+        for line in p.read_text(encoding="utf-8-sig").splitlines():
+            t = line.strip()
+            if t and not t.startswith("#") and "=" in t:
+                k, val = t.split("=", 1)
+                if k.strip() == key:
+                    return val.strip().strip('"').strip("'")
+    sys.exit(f"{key} not set (no environment variable, not in .env)")
 
 
 def aggregate(conn, day: date) -> int:
@@ -167,6 +180,7 @@ def main(dry_run: bool = False):
 
 
 if __name__ == "__main__":
+    _utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     main(**vars(ap.parse_args()))

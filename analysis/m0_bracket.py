@@ -17,7 +17,17 @@ than the feed's.
 import json, io, sys, collections, statistics
 from datetime import datetime
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+def _utf8_stdout():
+    """Windows consoles default to cp1252 and choke on non-ASCII output.
+    Applied only when run as a script: rebinding stdout at import time breaks
+    pytest's capture, which is how this was first noticed."""
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+
+_utf8_stdout()
 T = lambda s: datetime.fromisoformat(s) if s else None
 
 rows = [json.loads(l) for l in open("../ingest/m0_vehicles.jsonl", encoding="utf-8")]
