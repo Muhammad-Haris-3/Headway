@@ -205,7 +205,7 @@ rate limit and will be used.
 | DC-2 | **41% of prediction rows carry no `arrival_time`** — terminals publish departures only | Departure predictions handled as a separate, clearly labelled series. Never silently mixed with arrivals |
 | DC-3 | `schedule_relationship: ADDED` — trips appear that were not scheduled | Recorded and analysed separately; they are legitimate predictions and excluding them would be selection |
 | DC-4 | `arrival_uncertainty` is not rigorously defined as a confidence interval in the GTFS-RT specification | **Its empirical meaning is a finding, not an assumption.** No claim that it "should" be 95% |
-| DC-5 | Volume: ~1M rows/day on three routes against a 0.5 GB tier | Aggregation on write, raw retention window, monthly seals before pruning — the GridCast pattern |
+| DC-5 | **Measured at 197 MB/day** on three routes against a 0.5 GB tier — 30 days of raw would need 5.9 GB. Store-on-change compresses vehicles 6.9x but predictions only 1.8x, since an ETA changes on nearly every poll | 2 days full raw, 30 days at a 10% trip sample, permanent aggregates, seals before pruning. Fixed in `PREREGISTRATION.md` §11. Note `vehicle_events` is only 14% of bytes — this row originally named the wrong table |
 | DC-6 | Trips are cancelled, rerouted, and skip stops | A prediction with no possible arrival is `unmatchable`, recorded as such, and excluded from error but **counted in the match rate** |
 
 ---

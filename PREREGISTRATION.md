@@ -180,7 +180,7 @@ Any change to this document is a **new numbered section appended below**, never 
 edit to what is above, stating what changed, when, and why — committed before the
 analysis it affects is run.
 
-**Amendments so far: none.**
+**Amendments so far: one (§11).**
 
 ---
 
@@ -195,3 +195,70 @@ else can check.
 That is recorded here for the same reason as §0: a project whose subject is
 whether published claims can be trusted cannot overstate the provenance of its
 own.
+
+
+---
+
+## 11. Amendment 1 — retention, sampling and seals
+
+**Added:** 2026-08-20, after the M0-T6 storage measurement and before any
+retention has run. No data has been pruned at the time of writing.
+
+### Why
+
+M0-T6 measured **197 MB/day** against a 0.5 GB tier. Thirty days of full raw
+would need 5.9 GB. Keeping everything is not an option that was rejected — it is
+an option that does not exist.
+
+### The policy
+
+| Data | Kept |
+|---|---|
+| Full raw (`predictions_register`, `vehicle_events`) | **2 days** |
+| Raw for a **10% sample of trips** | **30 days**, complete revision chains |
+| `daily_metrics` aggregates | **Forever** |
+| Seals over everything pruned | **Forever, in git** |
+
+`matches` ceases to be a table and becomes a view. It cost 73 MB/day and held
+nothing the register and arrivals did not already contain.
+
+### The sample is by trip, and fixed by function
+
+Membership is `md5(trip_id) % 10 = 0` — deterministic, computable by anyone,
+carrying no state. It is a function rather than a stored list **so that the
+sample cannot be quietly redrawn later to include a trip whose data turned out
+to be interesting.** Verified unbiased at 9.98% over 200,000 identifiers.
+
+Sampling by trip rather than by row is what keeps **BQ-4** answerable. Revision
+paths need whole chains; a sample of scattered rows would answer nothing. This
+gives complete chains for a tenth of trips — reduced power, not absence.
+
+### What is knowingly given up
+
+**Questions not thought of in advance cannot be asked of data older than two
+days**, except on the 10% sample. Aggregates are frozen answers to the questions
+listed in §2 and §4. This is a real loss and it is recorded as one.
+
+**BQ-4 beyond two days is a 10% result** and must be reported as such — never as
+if it covered the whole record.
+
+### Seals
+
+Before any row is deleted, a SHA-256 digest is taken over the rows in a fixed
+order, together with the row count, and written to `seals/` and committed to git.
+
+A seal proves the rows have not changed since sealing. **It does not prove they
+were correct when written** — that is what the append-only grant is for — and it
+cannot distinguish deliberate tampering from legitimate pruning, since both leave
+fewer rows. This is why counts are published alongside digests rather than
+reduced to pass/fail.
+
+### Order of operations, fixed
+
+**Aggregate → seal → prune.** Each step refuses to run unless the previous
+succeeded. Aggregating after pruning would summarise data already gone; pruning
+before sealing would destroy the evidence the seal exists to protect.
+
+Retention runs as the **owner** role. The ingest role holds no `DELETE` by grant
+(M0-T3), and that separation is deliberate: the process writing history must not
+be able to rewrite it.
