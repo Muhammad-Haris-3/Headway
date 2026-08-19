@@ -67,6 +67,46 @@ def rel(o, name):
     return d["id"] if d else None
 
 
+DERIVE_ARRIVALS = """
+INSERT INTO arrivals (trip_id, stop_id, bracket_lower, bracket_upper, arrival_at, bracket_width)
+SELECT s.trip_id, s.stop_id, b.lower_t, s.first_stop,
+       b.lower_t + (s.first_stop - b.lower_t) / 2,
+       EXTRACT(EPOCH FROM (s.first_stop - b.lower_t))
+FROM (SELECT trip_id, stop_id, min(COALESCE(feed_updated_at, observed_at)) AS first_stop
+      FROM vehicle_events
+      WHERE status = 'STOPPED_AT' AND trip_id IS NOT NULL
+        AND observed_at > now() - interval '6 hours'
+      GROUP BY trip_id, stop_id) s
+JOIN LATERAL (
+  SELECT max(COALESCE(v.feed_updated_at, v.observed_at)) AS lower_t
+  FROM vehicle_events v
+  WHERE v.trip_id = s.trip_id AND v.stop_id = s.stop_id
+    AND v.status <> 'STOPPED_AT'
+    AND COALESCE(v.feed_updated_at, v.observed_at) < s.first_stop
+) b ON TRUE
+WHERE b.lower_t IS NOT NULL
+ON CONFLICT (trip_id, stop_id) DO NOTHING
+"""
+
+
+def derive_arrivals(conn) -> int:
+    """Turn raw vehicle events into bracketed arrivals.
+
+    Nothing else does this. The ingester writes raw and the retention job
+    aggregates from `matches`, which is a view over `arrivals` — so without this
+    step `arrivals` never grows, the match rate falls steadily against a frozen
+    table, and the pipeline looks healthy the whole time. Found by building the
+    status page and seeing 36.5% where 82.6% was measured.
+
+    Arrival is the bracket MIDPOINT (PREREGISTRATION.md §1). ON CONFLICT DO
+    NOTHING because an arrival, once established, is not revised: a later run
+    seeing a wider bracket must not overwrite a tighter earlier one.
+    """
+    with conn.cursor() as cur:
+        cur.execute(DERIVE_ARRIVALS)
+        return cur.rowcount
+
+
 def main(minutes: float):
     conn = psycopg.connect(env("INGEST_DATABASE_URL"), autocommit=True)
     end = time.time() + minutes * 60
@@ -147,6 +187,13 @@ def main(minutes: float):
         sleep = VEHICLE_EVERY - (time.time() - cycle)
         if sleep > 0:
             time.sleep(sleep)
+
+    try:
+        n = derive_arrivals(conn)
+        print(f"derived {n:,} new arrivals", flush=True)
+    except Exception as e:
+        errors += 1
+        print(f"  derive error: {type(e).__name__}: {e}", flush=True)
 
     # NFR-5: coverage is recorded, so a gap can never be read as punctual service
     with conn.cursor() as cur:

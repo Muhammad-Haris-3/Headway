@@ -67,3 +67,11 @@ CREATE TABLE IF NOT EXISTS seals (
     digest        text        NOT NULL,   -- sha256 over the rows, fixed order
     UNIQUE (covers_day, table_name)
 );
+
+
+-- The ingest role may write `arrivals`, which is derived and recomputable from
+-- vehicle_events. This does not weaken the append-only guarantee: that property
+-- belongs to `predictions_register`, where a row records a claim made before its
+-- outcome existed. No UPDATE or DELETE is granted even here — an arrival, once
+-- established, is never revised.
+GRANT INSERT, SELECT ON arrivals TO headway_ingest;

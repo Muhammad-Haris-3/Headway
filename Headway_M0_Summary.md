@@ -3,7 +3,7 @@
 **Milestone:** M0 — Arrival-time precision and the walking skeleton
 **Author:** Muhammad Haris Khokhar
 **Date:** 2026-08-20
-**Status:** **Partial.** The kill question is answered. Remaining tasks not started.
+**Status:** **Complete.** All tasks done or superseded. Ingestion running unattended.
 **Depends on:** `Headway_SRS_v1.0.md`, `Headway_M0_Spec.md`
 
 ---
@@ -33,14 +33,14 @@ the criterion had three bands rather than a pass/fail.
 
 | Task | Status |
 |---|---|
-| M0-T1 Repository and CI | **Not started** |
+| M0-T1 Repository and CI | **Done** — three workflows, 6 tests |
 | M0-T2 Streaming ingestion | **Superseded** — streaming is unavailable; see §4.1 |
 | M0-T3 Schema and append-only grant | **Done.** Grant tested by attempted violation; see §3.4 |
 | **M0-T4 Arrival-time precision** | **Done.** The task the milestone exists for |
 | M0-T5 Match rate and misses | **Done** — 82.6% in-window; see §3.5 |
 | M0-T6 Storage | **Done** — does **not** fit raw; see §3.6 |
 | M0-T7 Pre-registration | **Done**, but written after the pilot — see §5.1 and `PREREGISTRATION.md` §0 |
-| M0-T8 Walking skeleton | Not started |
+| M0-T8 Walking skeleton | **Done** — status page, no accuracy figures on it |
 | M0-T9 Decision | This document |
 
 M0-T4 was taken first deliberately: the spec ordered it before the skeleton so a
