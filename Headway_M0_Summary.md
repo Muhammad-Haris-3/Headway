@@ -35,11 +35,11 @@ the criterion had three bands rather than a pass/fail.
 |---|---|
 | M0-T1 Repository and CI | **Not started** |
 | M0-T2 Streaming ingestion | **Superseded** — streaming is unavailable; see §4.1 |
-| M0-T3 Schema and append-only grant | **Not started** |
+| M0-T3 Schema and append-only grant | **Done.** Grant tested by attempted violation; see §3.4 |
 | **M0-T4 Arrival-time precision** | **Done.** The task the milestone exists for |
 | M0-T5 Match rate and misses | Not started |
 | M0-T6 Storage | Not started |
-| M0-T7 Pre-registration | **Partial** — see §5.1, which is a real weakness |
+| M0-T7 Pre-registration | **Done**, but written after the pilot — see §5.1 and `PREREGISTRATION.md` §0 |
 | M0-T8 Walking skeleton | Not started |
 | M0-T9 Decision | This document |
 
@@ -77,6 +77,33 @@ yet stopped and the first showing it stopped. The true arrival lies inside.
 **Converged.** The feed median read 19.0s at 349 and 397 arrivals, then 20.0s at
 491 and again at the full 595. It moved by one second as the sample grew by 70%
 and then stopped moving. It is not a sampling fluctuation.
+
+### 3.4 The append-only guarantee, tested rather than asserted
+
+`ingest/m0_setup.py` creates the roles, applies the grants, then **connects as
+each role and attempts to violate them**. All six attempts behaved:
+
+| Role | Attempt | Result |
+|---|---|---|
+| `headway_ingest` | INSERT into the register | permitted |
+| `headway_ingest` | **UPDATE the register** | **refused** |
+| `headway_ingest` | **DELETE from the register** | **refused** |
+| `headway_app` | SELECT | permitted |
+| `headway_app` | INSERT | refused |
+| `headway_app` | DELETE | refused |
+
+Each refusal is `InsufficientPrivilege`, raised by PostgreSQL rather than caught
+by application code. A success on any of the four denied attempts exits non-zero
+and fails the milestone.
+
+This matters because the project's entire claim is that a prediction was
+recorded before its outcome existed. That is worth precisely what the guarantee
+against later editing is worth, and a grant nobody has tried to break is a
+comment rather than a guarantee.
+
+The test row inserted by the ingest role is deliberately left in place. The owner
+could remove it; the ingest role cannot, which is the simplest standing
+demonstration of the property.
 
 ### 3.3 What the gap between the two clocks means
 
