@@ -1,0 +1,9 @@
+# Raw stream dumps: ~7MB per 20 minutes, ~1M rows/day in production.
+# The derived bracket measurements are committed instead, so the precision
+# claim stays checkable without carrying the firehose in git.
+*.jsonl
+__pycache__/
+*.pyc
+.env
+node_modules/
+.next/
