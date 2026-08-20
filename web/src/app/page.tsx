@@ -1,7 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8090";
+// No localhost fallback in a deployed build. A default of 127.0.0.1 makes a
+// broken deployment look healthy on the developer's machine — their own API is
+// running, so the page loads for them and for nobody else. Better to fail with
+// a message that names the missing variable. Trailing slashes are stripped
+// because "https://host/" + "/status" is a 404 that reads like a server fault.
+const RAW = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API = RAW.replace(/\/+$/, "");
 
 type Status = {
   counts: { predictions: number; vehicle_events: number; arrivals: number; matched_predictions: number };
@@ -28,11 +34,15 @@ export default function Page() {
   const [slow, setSlow] = useState(false);
 
   useEffect(() => {
+    if (!API) {
+      setErr("NEXT_PUBLIC_API_URL is not set on this deployment.");
+      return;
+    }
     const t = setTimeout(() => setSlow(true), 3500);
     fetch(`${API}/status`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
       .then(setD)
-      .catch((e) => setErr(String(e)))
+      .catch((e) => setErr(`${e} — requested ${API}/status`))
       .finally(() => clearTimeout(t));
     return () => clearTimeout(t);
   }, []);
