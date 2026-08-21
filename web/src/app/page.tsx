@@ -13,7 +13,8 @@ type Status = {
   counts: { predictions: number; vehicle_events: number; arrivals: number; matched_predictions: number };
   window: { first_seen: string | null; last_seen: string | null; days: number };
   threshold: { required_days: number; required_matches: number; days_done: number;
-               matches_done: number; days_remaining: number; met: boolean };
+               matches_done: number; days_remaining: number; met: boolean;
+               days_aggregated: number; matches_retained_now: number; note: string };
   coverage: { windows: number; polls: number; expected: number; errors: number;
               poll_completion: number | null; minutes_covered: number;
               recent: { window_start: string; window_end: string; polls: number;
@@ -107,6 +108,12 @@ export default function Page() {
               <div className="l">{d.threshold.days_remaining.toFixed(1)} days remaining</div>
             </div>
           </div>
+          <p className="note">
+            {d.threshold.note} {num(d.threshold.days_aggregated)} complete{" "}
+            {d.threshold.days_aggregated === 1 ? "day has" : "days have"} been aggregated so far.
+            The live join currently holds {num(d.threshold.matches_retained_now)} matched rows, but
+            that figure falls as raw data is pruned and so cannot be counted toward a threshold.
+          </p>
 
           <div className="sechead"><span className="n">03</span><h2>What has been established</h2></div>
           <div className="panel stats">

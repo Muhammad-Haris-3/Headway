@@ -6,6 +6,7 @@ reachable rather than passing vacuously: a skipped test that says so is honest,
 a green tick that checked nothing is not.
 """
 import os
+from datetime import date
 import sys
 from pathlib import Path
 
@@ -83,6 +84,45 @@ def test_trip_sample_is_unbiased():
                     "FROM generate_series(1, 50000) i")
         hit, total = cur.fetchone()
         assert 0.09 < hit / total < 0.11, f"sample rate {hit/total:.3f} is not 10%"
+
+
+@needs_db
+def test_an_aggregate_can_never_shrink():
+    """The permanent record must not be recomputable from a fraction of itself.
+
+    After a day's full raw is pruned its 10% sample survives, so the day is
+    still visible to the aggregator. A plain upsert would recompute it from a
+    tenth of the data and overwrite the real figures — on 2026-08-19, bucket
+    5-10, n 1,592 -> 210 and median +7.5s -> -14.5s, with the raw needed to
+    notice it deleted in the same run. This attempts exactly that overwrite and
+    expects it to be refused.
+    """
+    import psycopg
+    from ingest.retain import UPSERT_DAILY
+
+    probe = (date(1970, 1, 1), "test-shrink-guard", "5-10")
+    big = probe + (1000, 7.5, 7.5, -1.0, 20.0, 900, 800)
+    small = probe + (10, -14.5, -14.5, -30.0, 5.0, 9, 3)
+
+    with psycopg.connect(_env("DATABASE_URL"), autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM daily_metrics WHERE route_id = %s", (probe[1],))
+        try:
+            cur.execute(UPSERT_DAILY, big)
+            cur.execute(UPSERT_DAILY, small)          # the sample, trying to overwrite
+            cur.execute("SELECT n, median_error_s FROM daily_metrics "
+                        "WHERE day = %s AND route_id = %s AND horizon_bucket = %s", probe)
+            n, median = cur.fetchone()
+            assert n == 1000, f"a 10% recomputation overwrote the full day (n={n})"
+            assert median == 7.5, f"median was overwritten with the sampled value ({median})"
+
+            # ...but a genuinely larger recomputation must still land, or late-derived
+            # arrivals could never be added to a day already written.
+            cur.execute(UPSERT_DAILY, probe + (2000, 9.0, 9.0, -1.0, 20.0, 1800, 1600))
+            cur.execute("SELECT n FROM daily_metrics "
+                        "WHERE day = %s AND route_id = %s AND horizon_bucket = %s", probe)
+            assert cur.fetchone()[0] == 2000, "growth was refused as well as erosion"
+        finally:
+            cur.execute("DELETE FROM daily_metrics WHERE route_id = %s", (probe[1],))
 
 
 @needs_db

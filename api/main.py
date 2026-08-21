@@ -71,6 +71,20 @@ def status():
                (SELECT count(*) FROM matches)              AS matched_predictions
     """)[0]
 
+    # Progress toward the threshold is counted from `daily_metrics`, NOT from a
+    # live count over `matches`. `matches` is a view over raw that retention
+    # prunes — 2 days full, 30 days at a 10% trip sample — so counting it makes
+    # the gate DRIFT DOWN as old rows are deleted instead of accumulating: of
+    # 12,625 matches present on 2026-08-21, only 1,443 would survive the 2-day
+    # window. `daily_metrics` is written once per complete day, before anything
+    # is pruned, and kept forever. It is the only counter that outlives its own
+    # source, which is exactly what a stopping rule needs.
+    cumulative = db.rows("""
+        SELECT coalesce(sum(n), 0)  AS matched_predictions,
+               count(DISTINCT day)  AS days_aggregated
+        FROM daily_metrics
+    """)[0]
+
     span = db.rows("""
         SELECT min(observed_at) AS first_seen, max(observed_at) AS last_seen,
                EXTRACT(EPOCH FROM (max(observed_at) - min(observed_at))) / 86400.0 AS days
@@ -130,9 +144,17 @@ def status():
             "required_days": REQUIRED_DAYS,
             "required_matches": REQUIRED_MATCHES,
             "days_done": round(days, 2),
-            "matches_done": counts["matched_predictions"],
+            "matches_done": cumulative["matched_predictions"],
             "days_remaining": round(max(0.0, REQUIRED_DAYS - days), 2),
-            "met": days >= REQUIRED_DAYS and counts["matched_predictions"] >= REQUIRED_MATCHES,
+            "met": (days >= REQUIRED_DAYS
+                    and cumulative["matched_predictions"] >= REQUIRED_MATCHES),
+            "days_aggregated": cumulative["days_aggregated"],
+            "matches_retained_now": counts["matched_predictions"],
+            "note": ("Counted from the sealed daily aggregates, which are written before "
+                     "any row is pruned and kept permanently — not from the live join, "
+                     "which shrinks as raw data ages out. It covers complete days only, "
+                     "in the analysis population fixed in advance: bracket width under "
+                     "60s, horizons 5-30 minutes. Today is not included until it ends."),
         },
         "coverage": {
             "windows": cov["windows"], "polls": cov["polls"], "expected": cov["expected"],

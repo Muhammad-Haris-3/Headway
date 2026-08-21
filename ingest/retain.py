@@ -38,6 +38,23 @@ SAMPLE_DAYS = 30
 
 BUCKETS = [(300, 600, "5-10"), (600, 1200, "10-20"), (1200, 1800, "20-30")]
 
+# Module level so the test can exercise this exact statement rather than a
+# paraphrase of it. The `WHERE EXCLUDED.n >= daily_metrics.n` clause is the
+# whole point — see aggregate() for what it prevents.
+UPSERT_DAILY = """
+INSERT INTO daily_metrics (day, route_id, horizon_bucket, n,
+    median_error_s, mean_error_s, p10_error_s, p90_error_s,
+    n_with_uncert, n_contained)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+ON CONFLICT (day, route_id, horizon_bucket) DO UPDATE SET
+    n = EXCLUDED.n, median_error_s = EXCLUDED.median_error_s,
+    mean_error_s = EXCLUDED.mean_error_s,
+    p10_error_s = EXCLUDED.p10_error_s, p90_error_s = EXCLUDED.p90_error_s,
+    n_with_uncert = EXCLUDED.n_with_uncert,
+    n_contained = EXCLUDED.n_contained
+WHERE EXCLUDED.n >= daily_metrics.n
+"""
+
 
 def env(key: str) -> str:
     """Prefer the process environment (GitHub secrets), fall back to .env (local)."""
@@ -55,9 +72,28 @@ def env(key: str) -> str:
     sys.exit(f"{key} not set (no environment variable, not in .env)")
 
 
-def aggregate(conn, day: date) -> int:
-    """Write the permanent record for one complete day. Idempotent."""
-    written = 0
+def aggregate(conn, day: date) -> tuple[int, int]:
+    """Write the permanent record for one complete day. Idempotent.
+
+    An aggregate is never allowed to SHRINK. Once a day's full raw is pruned,
+    its 10% sample survives for another 28 days — so the day is still visible
+    here, and a plain upsert would recompute it from a tenth of the data and
+    overwrite the real figures. Measured on 2026-08-19, bucket 5-10: n would
+    have gone 1,592 -> 210 and the median error +7.5s -> -14.5s, flipping late
+    to early, with the raw needed to notice it deleted in the same run.
+
+    So the conflict clause updates only when the incoming row was computed from
+    at least as much data as the stored one. Growth still lands (arrivals derived
+    late genuinely add matches); erosion never does.
+
+    Note what is deliberately NOT done: restricting this to days whose full raw
+    survives. Aggregation runs before pruning precisely so that a run delayed by
+    an outage still writes complete aggregates for every day it is about to
+    prune. A day-range guard here would defeat that ordering.
+
+    Returns (rows written, rows refused because they would have shrunk).
+    """
+    written = frozen = 0
     with conn.cursor() as cur:
         for lo, hi, label in BUCKETS:
             cur.execute("""
@@ -76,20 +112,16 @@ def aggregate(conn, day: date) -> int:
                 GROUP BY route_id
             """, (day, lo, hi))
             for r in cur.fetchall():
-                cur.execute("""
-                    INSERT INTO daily_metrics (day, route_id, horizon_bucket, n,
-                        median_error_s, mean_error_s, p10_error_s, p90_error_s,
-                        n_with_uncert, n_contained)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT (day, route_id, horizon_bucket) DO UPDATE SET
-                        n = EXCLUDED.n, median_error_s = EXCLUDED.median_error_s,
-                        mean_error_s = EXCLUDED.mean_error_s,
-                        p10_error_s = EXCLUDED.p10_error_s, p90_error_s = EXCLUDED.p90_error_s,
-                        n_with_uncert = EXCLUDED.n_with_uncert,
-                        n_contained = EXCLUDED.n_contained
-                """, (day, r[0], label, r[1], r[2], r[3], r[4], r[5], r[6], r[7]))
-                written += 1
-    return written
+                cur.execute(UPSERT_DAILY,
+                            (day, r[0], label, r[1], r[2], r[3], r[4], r[5], r[6], r[7]))
+                # rowcount is 0 when the conflict clause refused the update —
+                # i.e. this recomputation was based on less data than the row
+                # already held. That is the sample trying to overwrite the full day.
+                if cur.rowcount:
+                    written += 1
+                else:
+                    frozen += 1
+    return written, frozen
 
 
 def seal(conn, day: date, table: str, where: str, params: tuple, dry: bool) -> dict | None:
@@ -128,14 +160,16 @@ def main(dry_run: bool = False):
         cur.execute("""SELECT DISTINCT observed_at::date FROM predictions_register
                        WHERE observed_at::date < %s ORDER BY 1""", (today,))
         days = [r[0] for r in cur.fetchall()]
-    total = 0
+    total = held = 0
     for d in days:
-        n = aggregate(conn, d)
+        n, f = aggregate(conn, d)
         total += n
-        print(f"  aggregated {d}: {n} rows into daily_metrics")
+        held += f
+        note = f", {f} kept frozen (already computed from more data)" if f else ""
+        print(f"  aggregated {d}: {n} rows into daily_metrics{note}")
     if not days:
         print("  nothing complete to aggregate yet")
-    print(f"  daily_metrics rows written: {total}\n")
+    print(f"  daily_metrics rows written: {total}, refused as shrinking: {held}\n")
 
     # ---- 2. seal, before anything is removed ------------------------------
     # Unsampled rows past the full-raw window are the ones that will go.
