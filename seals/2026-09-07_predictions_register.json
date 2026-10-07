@@ -1,7 +1,7 @@
 {
  "covers_day": "2026-09-07",
  "table": "predictions_register",
- "row_count": 12381,
- "digest": "2ac093b80f03b25cb44e2aaf41c29fafdd809047ce27f5b75c5814331a92027c",
- "sealed_at": "2026-09-09T08:57:41.218488+00:00"
+ "row_count": 1439,
+ "digest": "ede58ef08c9a28d34917081381df68759210c507876b43fb616586d9cd1a424b",
+ "sealed_at": "2026-10-07T11:03:18.149060+00:00"
 }
