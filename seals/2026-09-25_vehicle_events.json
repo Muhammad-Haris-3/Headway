@@ -1,7 +1,7 @@
 {
  "covers_day": "2026-09-25",
  "table": "vehicle_events",
- "row_count": 2131,
- "digest": "df913799b6f66b90a3d1057075cff76eb2a6249eecdfc9b23c570b7c8a89c438",
- "sealed_at": "2026-09-27T09:59:42.918468+00:00"
+ "row_count": 243,
+ "digest": "3c237a678b8e88f9d73dfc366511c4858cf52e1d76bd95be7ffa1d53e475854e",
+ "sealed_at": "2026-10-25T09:07:53.776168+00:00"
 }
